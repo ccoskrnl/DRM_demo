@@ -1,0 +1,3 @@
+decrypt hash2_fnv1
+play hash1_xor_rot
+get_key hash3_jenkins

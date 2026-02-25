@@ -1,0 +1,1 @@
+#define get_key_HASH 0xeecce91a94cedef2

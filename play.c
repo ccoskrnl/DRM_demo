@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "types.h"
-#include "decrypt_const.h"
+#include "decrypt_hash.h"
 
 extern uint64_t decrypt_val;
 
@@ -21,7 +21,15 @@ void play(uint64_t user_key, uint64_t data[], int len)
     int i = 0;
     for (i = 0; i < len; i++)
     {
-        printf("0x%lx\n", decrypt(user_key, data[i]));
+        uint64_t decrypted_data = decrypt(user_key, data[i]);
+        printf("%c", (char)(decrypted_data));
+        printf("%c", (char)(decrypted_data >> 8));
+        printf("%c", (char)(decrypted_data >> 16));
+        printf("%c", (char)(decrypted_data >> 24));
+        printf("%c", (char)(decrypted_data >> 32));
+        printf("%c", (char)(decrypted_data >> 40));
+        printf("%c", (char)(decrypted_data >> 48));
+        printf("%c", (char)(decrypted_data >> 56));
     }
 
 }

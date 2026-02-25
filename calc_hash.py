@@ -1,13 +1,31 @@
-#!/usr/bin/env python3
-
-
-import sys
-import argparse
+from cffi import FFI
 from elftools.elf.elffile import ELFFile
 from elftools.elf.sections import SymbolTableSection
 
+ffi = FFI()
+libhash = ffi.dlopen("./libhash.so")
+
+ffi.cdef("""
+        typedef uint64_t* addr_t;
+        uint64_t hash1_xor_rot(addr_t addr, long size);
+        uint64_t hash2_fnv1(addr_t addr, long size);
+        uint64_t hash3_jenkins(addr_t addr, long size);
+""")
+
+def func_name_with_hash_func(filename: str) -> list[tuple[str, str]]:
+    func_name_map: List[Tuple[str, str]] = []
+    with open(filename, 'r') as f:
+        while True:
+            line = f.readline()
+            if not line:
+                break
+            line = line.strip()
+            func_name_map += [tuple(line.split(' '))]
+
+    return func_name_map
 
 def extract_function_from_object_file(obj_file, func_name):
+
     """从可重定位目标文件中提取函数机器码"""
     
     with open(obj_file, 'rb') as f:
@@ -53,7 +71,7 @@ def extract_function_from_object_file(obj_file, func_name):
             return None
         
         # 找到函数所在的节
-        target_section = elf.get_section(section_index)
+        target_section : 'Section' = elf.get_section(section_index)
         if not target_section:
             print(f"错误: 找不到函数所在的节")
             return None
@@ -75,52 +93,31 @@ def extract_function_from_object_file(obj_file, func_name):
         
         return func_code
 
-def bytes_to_c_array(bytes_data, array_name="func_body"):
-    """将字节数据转换为C数组格式"""
-    if not bytes_data:
-        return ""
+def calculate_hash(obj_file_name, func_name, hash_func_name):
+    func_code = extract_function_from_object_file(obj_file_name, func_name)
+    if func_code is None:
+        return None
     
-    hex_lines = []
-    for i in range(0, len(bytes_data), 16):
-        line_bytes = bytes_data[i:i+16]
-        hex_strs = [f"0x{b:02x}" for b in line_bytes]
-        hex_lines.append("    " + ", ".join(hex_strs))
+    # 将函数机器码转换为CFFI可接受的格式
+    func_code_array = ffi.new("uint8_t[]", func_code)
     
-    c_code = f"uint8_t {array_name}_COPY[] = {{\n"
-    c_code += ",\n".join(hex_lines)
-    c_code += "\n};\n"
-    c_code += f"int {array_name}_SIZE = sizeof({array_name}_COPY);\n"
+    # 调用hash函数计算hash值
+    hash_func = getattr(libhash, hash_func_name)
+    hash_value = hash_func(ffi.cast("addr_t", func_code_array), len(func_code))
     
-    return c_code
-
-def main():
-    parser = argparse.ArgumentParser(description='从.o文件中提取函数机器码')
-    parser.add_argument('obj_file', help='可重定位目标文件 (.o)')
-    parser.add_argument('func_name', help='要提取的函数名')
-    parser.add_argument('--output', '-o', help='输出文件 (默认为标准输出)')
-    parser.add_argument('--array-name', '-a', help='C数组名称')
-    
-    args = parser.parse_args()
-    
-    # 提取函数代码
-    func_code = extract_function_from_object_file(args.obj_file, args.func_name)
-    
-    if not func_code:
-        sys.exit(1)
-    
-    # 设置数组名
-    array_name = args.array_name or f"{args.func_name}"
-    
-    # 生成C代码
-    c_code = bytes_to_c_array(func_code, array_name)
-
-    # 输出
-    if args.output:
-        with open(args.output, 'w') as f:
-            f.write(c_code)
-        print(f"已写入: {args.output}")
-    else:
-        print(c_code)
+    return hash_value
 
 if __name__ == "__main__":
-    main()
+    import sys
+    if len(sys.argv) != 4:
+        print("用法: python calc_hash.py <object_file> <function_name> <hash_function>")
+        print("示例: python calc_hash.py get_key_and_decrypt.o get_key hash1_xor_rot")
+        sys.exit(1)
+    
+    obj_file = sys.argv[1]
+    func_name = sys.argv[2]
+    hash_func_name = sys.argv[3]
+    
+    hash_value = calculate_hash(obj_file, func_name, hash_func_name)
+    if hash_value is not None:
+        print(f"#define {func_name}_HASH {hash_value:#x}")
